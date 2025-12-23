@@ -523,3 +523,35 @@ textarea#notesBox:focus{ border-color: rgba(79,140,255,.40); box-shadow: 0 0 0 3
   touch-action: manipulation !important;
 }
 
+
+
+/* v3.8: bottom sheet internal scroll + compact forms */
+.sheet{
+  max-height: 92dvh;
+  overflow: hidden;
+}
+#sheetBody{
+  max-height: calc(92dvh - 160px); /* head + error + actions */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+}
+/* slightly smaller textarea by default */
+.field textarea{
+  min-height: 90px;
+}
+.chipBtn{
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,.22);
+  background: rgba(5,10,22,.35);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.divider{
+  height: 1px;
+  background: rgba(255,255,255,.06);
+  margin: 10px 0;
+}

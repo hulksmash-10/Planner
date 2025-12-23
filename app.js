@@ -1,4 +1,4 @@
-// Planner Flat v3.7 (ALL MODULES) - Phone upload friendly
+// Planner Flat v3.8 (ALL MODULES) - Phone upload friendly
 // Data: IndexedDB stores: tasks, recurring, habits, habitLogs, big, notes
 // Week starts Monday.
 
