@@ -1,4 +1,4 @@
-// Planner Flat v3 (ALL MODULES) - Phone upload friendly
+// Planner Flat v3.7 (ALL MODULES) - Phone upload friendly
 // Data: IndexedDB stores: tasks, recurring, habits, habitLogs, big, notes
 // Week starts Monday.
 
@@ -1300,6 +1300,176 @@ async function refreshBig(){
 // ---------- NOTES ----------
 let _notesDebounce = null;
 
+
+// ---------- Missing Functions Patch (v3.7) ----------
+function onFab(){
+  // Single FAB for all tabs
+  if(state.currentTab==="plan") return openModalTask("create");
+  if(state.currentTab==="habits") return openModalHabit("create");
+  if(state.currentTab==="big") return openModalBig("create");
+  // Notes: focus textbox
+  if(state.currentTab==="notes"){
+    const el=document.getElementById("notesBox"); if(el) el.focus();
+    return;
+  }
+  // Review/Backup: no-op
+}
+
+async function refreshNotes(){
+  const notesBox = document.getElementById("notesBox");
+  if(!notesBox) return;
+  const text = await getNotes(state.currentDate, state.currentMode);
+  // Only set if user isn't actively editing
+  if(document.activeElement !== notesBox){
+    notesBox.value = text || "";
+  }
+  const saved = document.getElementById("notesSaved");
+  if(saved) saved.textContent = "Auto-save";
+}
+
+async function refreshReview(){
+  const mode = state.currentMode;
+  const start = weekStartMonday(state.currentDate);
+  const end = addDaysISO(start, 6);
+
+  const weekLabel = document.getElementById("weekLabel");
+  if(weekLabel) weekLabel.textContent = `${start} → ${end}`;
+
+  // ---- Plan stats ----
+  let totalTasks = 0, doneTasks = 0;
+  let p1Open = 0, p2Open = 0;
+  const breakdown = []; // {date,total,done}
+  for(let i=0;i<7;i++){
+    const d = addDaysISO(start, i);
+    const tasks = await listTasks(d, mode);
+    const t = tasks.length;
+    const done = tasks.filter(x=>x.done).length;
+    totalTasks += t; doneTasks += done;
+    p1Open += tasks.filter(x=>!x.done && (x.priority==="P1")).length;
+    p2Open += tasks.filter(x=>!x.done && (x.priority==="P2")).length;
+    breakdown.push({d,t,done});
+  }
+  const weekPlanKpi = document.getElementById("weekPlanKpi");
+  const weekPlanSub = document.getElementById("weekPlanSub");
+  if(weekPlanKpi) weekPlanKpi.textContent = `${doneTasks}/${totalTasks}`;
+  if(weekPlanSub) weekPlanSub.textContent = totalTasks? `${Math.round((doneTasks/totalTasks)*100)}% done` : "No tasks yet";
+
+  const weekTopPri = document.getElementById("weekTopPri");
+  if(weekTopPri) weekTopPri.textContent = `Open: P1=${p1Open}, P2=${p2Open}`;
+
+  const weekBreakdown = document.getElementById("weekBreakdown");
+  if(weekBreakdown){
+    weekBreakdown.innerHTML = breakdown.map(x=>{
+      const pct = x.t ? Math.round((x.done/x.t)*100) : 0;
+      return `<div class="row" style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.06)">
+        <div class="muted" style="min-width:92px;">${x.d}</div>
+        <div style="flex:1">${x.done}/${x.t} <span class="muted">(${pct}%)</span></div>
+      </div>`;
+    }).join("");
+  }
+
+  // ---- Habits stats ----
+  const habits = await listHabits(mode);
+  let target = 0, habitDone = 0;
+  for(const h of habits){
+    target += Number(h.freqPerWeek || 0);
+    for(let i=0;i<7;i++){
+      const d = addDaysISO(start, i);
+      const dow = dayOfWeekMon0(d);
+      const days = Array.isArray(h.days) ? h.days : [];
+      const applicable = days.length===0 || days.includes(dow);
+      if(!applicable) continue;
+      const log = await getHabitLog(d, mode, h.id);
+      if(log?.done) habitDone += 1;
+    }
+  }
+  const weekHabitsKpi = document.getElementById("weekHabitsKpi");
+  const weekHabitsSub = document.getElementById("weekHabitsSub");
+  if(weekHabitsKpi) weekHabitsKpi.textContent = `${habitDone}/${target}`;
+  if(weekHabitsSub) weekHabitsSub.textContent = target? `${Math.round((habitDone/target)*100)}% of weekly target` : "Set habit targets to track"
+
+  // ---- Big tasks stats ----
+  const big = await listBig(mode);
+  const open = big.filter(x=>!x.done);
+  const dueInWeek = open.filter(x=>x.dueDate && x.dueDate>=start && x.dueDate<=end);
+  const weekBigOpen = document.getElementById("weekBigOpen");
+  const weekBigDue = document.getElementById("weekBigDue");
+  if(weekBigOpen) weekBigOpen.textContent = String(open.length);
+  if(weekBigDue) weekBigDue.textContent = String(dueInWeek.length);
+}
+
+async function exportBackup(){
+  const payload = await dumpAllData();
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `planner-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  const st = document.getElementById("backupStatus");
+  if(st) st.textContent = "Exported";
+}
+
+async function importBackupFile(file){
+  const text = await file.text();
+  const data = JSON.parse(text);
+  if(!data || !data.data) throw new Error("Invalid backup file");
+  await restoreAllData(data.data);
+  const st = document.getElementById("backupStatus");
+  if(st) st.textContent = "Imported";
+  toast("Import complete");
+  await refreshAll();
+}
+
+async function clearAllData(){
+  if(!confirm("This will delete all planner data on this device. Continue?")) return;
+  await restoreAllData({tasks:[],recurring:[],habits:[],habitLogs:[],big:[],notes:[]});
+  const st = document.getElementById("backupStatus");
+  if(st) st.textContent = "Cleared";
+  toast("All data cleared");
+  await refreshAll();
+}
+
+// Dump everything from IndexedDB
+async function dumpAllData(){
+  const out = { version:"v3.7", exportedAt: new Date().toISOString(), data:{} };
+  const { t, stores } = tx([STORES.tasks, STORES.recurring, STORES.habits, STORES.habitLogs, STORES.big, STORES.notes], "readonly");
+  out.data.tasks = await reqToPromise(stores[STORES.tasks].getAll());
+  out.data.recurring = await reqToPromise(stores[STORES.recurring].getAll());
+  out.data.habits = await reqToPromise(stores[STORES.habits].getAll());
+  out.data.habitLogs = await reqToPromise(stores[STORES.habitLogs].getAll());
+  out.data.big = await reqToPromise(stores[STORES.big].getAll());
+  out.data.notes = await reqToPromise(stores[STORES.notes].getAll());
+  await txDone(t);
+  return out;
+}
+
+// Restore everything (wipe then insert)
+async function restoreAllData(d){
+  const { t, stores } = tx([STORES.tasks, STORES.recurring, STORES.habits, STORES.habitLogs, STORES.big, STORES.notes], "readwrite");
+  await Promise.all([
+    reqToPromise(stores[STORES.tasks].clear()),
+    reqToPromise(stores[STORES.recurring].clear()),
+    reqToPromise(stores[STORES.habits].clear()),
+    reqToPromise(stores[STORES.habitLogs].clear()),
+    reqToPromise(stores[STORES.big].clear()),
+    reqToPromise(stores[STORES.notes].clear()),
+  ]);
+  const putAll = async (storeName, arr)=>{
+    if(!Array.isArray(arr)) return;
+    for(const item of arr){
+      await reqToPromise(stores[storeName].put(item));
+    }
+  };
+  await putAll(STORES.tasks, d.tasks);
+  await putAll(STORES.recurring, d.recurring);
+  await putAll(STORES.habits, d.habits);
+  await putAll(STORES.habitLogs, d.habitLogs);
+  await putAll(STORES.big, d.big);
+  await putAll(STORES.notes, d.notes);
+  await txDone(t);
+}
 
 // ---------- Init ----------
 (async function init(){

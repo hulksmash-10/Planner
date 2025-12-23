@@ -1,8 +1,8 @@
-const CACHE = "planner-flat-v3.6";
+const CACHE = "planner-flat-v3.7";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=36",
+  "./styles.css?v=37",
   "./manifest.webmanifest",
   "./app.js",
   "./sw.js"
