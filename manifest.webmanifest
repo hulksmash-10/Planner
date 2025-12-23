@@ -1,0 +1,10 @@
+{
+  "name": "Planner",
+  "short_name": "Planner",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#050a16",
+  "theme_color": "#050a16",
+  "icons": []
+}

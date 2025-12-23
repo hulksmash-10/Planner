@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Planner</title>
+  <meta name="theme-color" content="#050a16" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css?v=34" />
+</head>
+<body>
+  <div class="safe">
+    <div class="app">
+      <div class="header">
+        <div class="titleRow">
+          <div class="title">
+            <h1>Planner</h1>
+            <div class="sub">Offline-first daily planner • fast • private • v3.5 DEBUG</div>
+          </div>
+          <div class="chip" title="Offline status">
+            <span class="dot" id="netDot"></span>
+            <span id="netText">Offline-ready</span>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="seg" aria-label="Mode">
+            <button id="modePro" type="button">Professional</button>
+            <button id="modePer" class="active" type="button">Personal</button>
+          </div>
+
+          <div class="dateCtl">
+            <button type="button" id="prevDay" aria-label="Previous day">◀</button>
+            <input id="date" type="date" />
+            <button type="button" id="nextDay" aria-label="Next day">▶</button>
+            <button type="button" id="todayBtn">Today</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- PLAN -->
+        <div class="card" id="panel-plan">
+          <div class="cardHead">
+            <div class="cardTitle">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 3h10a2 2 0 0 1 2 2v16l-7-3-7 3V5a2 2 0 0 1 2-2Z" fill="rgba(79,140,255,.95)"/></svg>
+              <span>Plan</span>
+            </div>
+            <div class="topRowActions">
+              <button class="menuBtn" id="recurringBtn" type="button" title="Recurring rules">Recurring</button>
+              <button class="menuBtn" id="copyYesterdayBtn" type="button" title="Copy yesterday">Copy Yesterday</button>
+              <button class="menuBtn" id="addTaskBtn" type="button" title="Add task">Add</button>
+              <span class="badge" id="taskBadge">0/0 done</span>
+            </div>
+          </div>
+          <div class="kpiRow">
+            <div class="bar"><div id="taskBar"></div></div>
+            <div class="kpiText" id="taskPct">0%</div>
+          </div>
+          <div class="hint" id="taskWarnings" style="display:none;"></div>
+          <div class="list" id="taskList"></div>
+        </div>
+
+        <!-- HABITS -->
+        <div class="card" id="panel-habits" style="display:none;">
+          <div class="cardHead">
+            <div class="cardTitle">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm4.2 6.8-4.9 6.3a1 1 0 0 1-1.5.1l-2.5-2.5a1 1 0 1 1 1.4-1.4l1.7 1.7 4.1-5.3a1 1 0 1 1 1.7 1.1Z" fill="rgba(34,197,94,.95)"/></svg>
+              <span>Habits</span>
+            </div>
+            <div class="topRowActions"><button class="menuBtn" id="addHabitBtn" type="button" title="Add habit">Add</button><span class="badge" id="habitsBadge">0/0 done</span></div>
+          </div>
+          <div class="hint" id="habitsHint">Habits can be tracked per day. If a habit has a time, it will be auto-added to Plan.</div>
+          <div class="list" id="habitList"></div>
+        </div>
+
+        <!-- BIG TASKS -->
+        <div class="card" id="panel-big" style="display:none;">
+          <div class="cardHead">
+            <div class="cardTitle">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 19h16v2H4v-2Zm2-2V5h3v12H6Zm5 0V9h3v8h-3Zm5 0V7h3v10h-3Z" fill="rgba(226,232,240,.90)"/></svg>
+              <span>Big Tasks</span>
+            </div>
+            <div class="topRowActions"><button class="menuBtn" id="addBigBtn" type="button" title="Add big task">Add</button><span class="badge" id="bigBadge">0 open</span></div>
+          </div>
+          <div class="hint" id="bigHint">Longer tasks (not daily tasks, not habits). Pin important items. Set due date and priority.</div>
+          <div class="list" id="bigList"></div>
+        </div>
+
+        <!-- NOTES -->
+        <div class="card" id="panel-notes" style="display:none;">
+          <div class="cardHead">
+            <div class="cardTitle">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4Zm14 2h2v14a2 2 0 0 1-2 2H6v-2h12V6Z" fill="rgba(245,158,11,.95)"/></svg>
+              <span>Notes</span>
+            </div>
+            <span class="badge" id="notesSaved">Auto-save</span>
+          </div>
+          <textarea id="notesBox" placeholder="Notes for this day... (auto-saves)"></textarea>
+        </div>
+
+        <!-- REVIEW -->
+        <div class="card" id="panel-review" style="display:none;">
+          <div class="cardHead">
+            <div class="cardTitle">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 5h-2v6l5 3 1-1.7-4-2.3V7Z" fill="rgba(226,232,240,.85)"/></svg>
+              <span>Review</span>
+            </div>
+            <span class="badge" id="weekLabel">Week</span>
+          </div>
+
+          <div class="grid" style="margin-top: 2px;">
+            <div class="card miniCard">
+              <div class="miniTitle">Plan completion</div>
+              <div class="miniValue" id="weekPlanKpi">0%</div>
+              <div class="miniSub" id="weekPlanSub">0/0 done</div>
+            </div>
+            <div class="card miniCard">
+              <div class="miniTitle">Habits completion</div>
+              <div class="miniValue" id="weekHabitsKpi">0%</div>
+              <div class="miniSub" id="weekHabitsSub">0/0 done</div>
+            </div>
+          </div>
+
+          <div class="grid" style="margin-top: 10px;">
+            <div class="card miniCard">
+              <div class="miniTitle">Big tasks open</div>
+              <div class="miniValue" id="weekBigOpen">0</div>
+              <div class="miniSub" id="weekBigDue">0 due this week</div>
+            </div>
+            <div class="card miniCard">
+              <div class="miniTitle">Focus</div>
+              <div class="miniValue" id="weekTopPri">P1</div>
+              <div class="miniSub">Based on open items</div>
+            </div>
+          </div>
+
+          <div class="hint" style="margin-top:10px;">Week starts on Monday.</div>
+          <div class="list" id="weekBreakdown"></div>
+        </div>
+
+        <!-- BACKUP -->
+        <div class="card" id="panel-backup" style="display:none;">
+          <div class="cardHead">
+            <div class="cardTitle">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8Zm1 13h-2v-4H8l4-4 4 4h-3v4Z" fill="rgba(79,140,255,.95)"/></svg>
+              <span>Backup</span>
+            </div>
+            <span class="badge">Export/Import</span>
+          </div>
+          <div class="hint">Export a JSON backup. Import will overwrite your data.</div>
+          <div class="grid" style="margin-top: 10px;">
+            <button class="btn primary" id="exportBtn" type="button">Export Backup</button>
+            <button class="btn ghost" id="importBtn" type="button">Import Backup</button>
+          </div>
+          <input type="file" id="importFile" accept="application/json" style="display:none;" />
+          <div class="grid" style="margin-top: 10px;">
+            <button class="btn ghost" id="clearDataBtn" type="button" style="border-color: rgba(239,68,68,.30);">Clear All Data</button>
+          </div>
+          <div class="hint" id="backupStatus" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="navInner">
+      <button class="navBtn active" data-tab="plan" type="button" aria-label="Plan">
+        <svg viewBox="0 0 24 24"><path d="M7 3h10a2 2 0 0 1 2 2v16l-7-3-7 3V5a2 2 0 0 1 2-2Z"/></svg>
+        <span>Plan</span>
+      </button>
+      <button class="navBtn" data-tab="habits" type="button" aria-label="Habits">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm4.2 6.8-4.9 6.3a1 1 0 0 1-1.5.1l-2.5-2.5a1 1 0 1 1 1.4-1.4l1.7 1.7 4.1-5.3a1 1 0 1 1 1.7 1.1Z"/></svg>
+        <span>Habits</span>
+      </button>
+      <button class="navBtn" data-tab="big" type="button" aria-label="Big Tasks">
+        <svg viewBox="0 0 24 24"><path d="M4 19h16v2H4v-2Zm2-2V5h3v12H6Zm5 0V9h3v8h-3Zm5 0V7h3v10h-3Z"/></svg>
+        <span>Big</span>
+      </button>
+      <button class="navBtn" data-tab="notes" type="button" aria-label="Notes">
+        <svg viewBox="0 0 24 24"><path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4Zm14 2h2v14a2 2 0 0 1-2 2H6v-2h12V6Z"/></svg>
+        <span>Notes</span>
+      </button>
+      <button class="navBtn" data-tab="review" type="button" aria-label="Review">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 5h-2v6l5 3 1-1.7-4-2.3V7Z"/></svg>
+        <span>Review</span>
+      </button>
+      <button class="navBtn" data-tab="backup" type="button" aria-label="Backup">
+        <svg viewBox="0 0 24 24"><path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8Zm1 13h-2v-4H8l4-4 4 4h-3v4Z"/></svg>
+        <span>Backup</span>
+      </button>
+    </div>
+  </div>
+
+  <button class="fab" id="fab" type="button" aria-label="Add">
+    <svg viewBox="0 0 24 24"><path d="M11 5h2v14h-2V5Zm-6 6h14v2H5v-2Z"/></svg>
+  </button>
+
+  <!-- Universal bottom sheet modal -->
+  <div class="modalBg" id="modalBg" aria-hidden="true">
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sheetHead">
+        <h2 id="sheetTitle">Item</h2>
+        <button class="xbtn" id="closeModal" type="button">Close</button>
+      </div>
+      <div id="sheetBody"></div>
+      <div class="errorText" id="modalError"></div>
+      <div class="sheetActions" id="sheetActions"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
+
+
+
+
