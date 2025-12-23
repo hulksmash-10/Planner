@@ -55,6 +55,624 @@ function escapeHtml(str){
     .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
     .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
+
+function escapeAttr(str){
+  return String(str||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+
+
+// ---------- Modal / Bottom sheet ----------
+function showModal({title, bodyHtml, actions=[]}){
+  const bg = document.getElementById("modalBg");
+  const ttl = document.getElementById("sheetTitle");
+  const body = document.getElementById("sheetBody");
+  const act = document.getElementById("sheetActions");
+  const err = document.getElementById("modalError");
+  if(!bg||!ttl||!body||!act||!err) return;
+
+  ttl.textContent = title || "Item";
+  body.innerHTML = bodyHtml || "";
+  act.innerHTML = "";
+  err.textContent = "";
+
+  for(const a of actions){
+    const b=document.createElement("button");
+    b.type="button";
+    b.className = "btn" + (a.variant ? " "+a.variant : "");
+    b.textContent = a.label || "OK";
+    b.addEventListener("click", a.onClick);
+    act.appendChild(b);
+  }
+
+  bg.style.display="flex";
+  bg.setAttribute("aria-hidden","false");
+}
+function setModalError(msg){
+  const err = document.getElementById("modalError");
+  if(err) err.textContent = msg || "";
+}
+function closeModal(){
+  const bg = document.getElementById("modalBg");
+  if(!bg) return;
+  bg.style.display="none";
+  bg.setAttribute("aria-hidden","true");
+  setModalError("");
+  const body = document.getElementById("sheetBody");
+  const act = document.getElementById("sheetActions");
+  if(body) body.innerHTML="";
+  if(act) act.innerHTML="";
+}
+function hmToMin(hm){
+  if(!hm) return null;
+  const [h,m]=hm.split(":").map(Number);
+  if(Number.isNaN(h)||Number.isNaN(m)) return null;
+  return h*60+m;
+}
+function renderDowChecks(selected=[]){
+  const names=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  return `
+    <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:6px;">
+      ${names.map((n,i)=>`
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; color: var(--text);">
+          <input type="checkbox" data-dow="${i}" ${selected.includes(i)?"checked":""} />
+          <span>${n}</span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+function readDowChecks(container){
+  const out=[];
+  container.querySelectorAll('input[type="checkbox"][data-dow]').forEach(cb=>{
+    if(cb.checked) out.push(Number(cb.dataset.dow));
+  });
+  return out;
+}
+
+// ---------- Task modal ----------
+function openModalTask(mode, task=null){
+  const isEdit = mode==="edit" && task;
+  const title = isEdit ? "Edit Task" : "Add Task";
+  const plannedStart = isEdit ? (task.plannedStart||"") : "";
+  const plannedFinish = isEdit ? (task.plannedFinish||"") : "";
+  const priority = isEdit ? (task.priority||"P2") : "P2";
+  const note = isEdit ? (task.note||"") : "";
+  const done = isEdit ? !!task.done : false;
+  const actualStart = isEdit ? (task.actualStart||"") : "";
+  const actualFinish = isEdit ? (task.actualFinish||"") : "";
+
+  const bodyHtml = `
+    <div class="field">
+      <label>Title</label>
+      <input id="taskTitle" placeholder="e.g., Site coordination" value="${escapeAttr(task?.title||"")}" />
+    </div>
+
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1">
+        <label>Start (planned)</label>
+        <input id="taskStart" type="time" value="${escapeAttr(plannedStart)}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Finish (planned)</label>
+        <input id="taskFinish" type="time" value="${escapeAttr(plannedFinish)}" />
+      </div>
+    </div>
+
+    ${isEdit ? `
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <div class="field" style="flex:1">
+          <label>Actual start</label>
+          <input id="taskActualStart" type="time" value="${escapeAttr(actualStart)}" />
+        </div>
+        <div class="field" style="flex:1">
+          <label>Actual finish</label>
+          <input id="taskActualFinish" type="time" value="${escapeAttr(actualFinish)}" />
+        </div>
+      </div>
+    ` : ""}
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1">
+        <label>Priority</label>
+        <select id="taskPriority">
+          ${["P1","P2","P3","P4"].map(p=>`<option value="${p}" ${p===priority?"selected":""}>${p}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="flex:1; display:flex; align-items:flex-end;">
+        <label style="display:flex; align-items:center; gap:10px; width:100%; margin:0;">
+          <input id="taskDone" type="checkbox" ${done?"checked":""} />
+          <span>Done</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Notes</label>
+      <textarea id="taskNote" placeholder="Optional">${escapeHtml(note)}</textarea>
+    </div>
+  `;
+
+  showModal({
+    title,
+    bodyHtml,
+    actions: [
+      { label:"Cancel", variant:"ghost", onClick: closeModal },
+      ...(isEdit ? [{ label:"Delete", variant:"danger", onClick: async ()=>{
+        await deleteTask(task.id);
+        closeModal();
+        await refreshAll();
+      }}] : []),
+      { label:"Save", variant:"primary", onClick: async ()=>{
+        const tTitle = document.getElementById("taskTitle").value.trim();
+        const ps = document.getElementById("taskStart").value;
+        const pf = document.getElementById("taskFinish").value;
+        const pr = document.getElementById("taskPriority").value;
+        const dn = document.getElementById("taskDone").checked;
+        const nt = document.getElementById("taskNote").value.trim();
+
+        if(!tTitle){ setModalError("Title is required."); return; }
+        if(pf && !ps){ setModalError("Start is mandatory if Finish is provided."); return; }
+        if(ps && pf){
+          const a=hmToMin(ps), b=hmToMin(pf);
+          if(a===null||b===null){ setModalError("Invalid time."); return; }
+          if(b<=a){ setModalError("Finish must be after Start."); return; }
+        }
+
+        const now = new Date().toISOString();
+        const base = isEdit ? task : {
+          id: uid(),
+          date: state.currentDate,
+          mode: state.currentMode,
+          done: false,
+          actualStart: "",
+          actualFinish: "",
+          createdAt: now,
+          sourceRuleId: "",
+          sourceHabitId: "",
+        };
+
+        const next = {
+          ...base,
+          title: tTitle,
+          plannedStart: ps || "",
+          plannedFinish: pf || "",
+          priority: pr,
+          done: dn,
+          note: nt,
+          updatedAt: now,
+        };
+
+        if(isEdit){
+          next.actualStart = document.getElementById("taskActualStart")?.value || next.actualStart || "";
+          next.actualFinish = document.getElementById("taskActualFinish")?.value || next.actualFinish || "";
+        }
+
+        await upsertTask(next);
+        closeModal();
+        await refreshAll();
+      }}
+    ]
+  });
+}
+
+// ---------- Habit modal ----------
+function openModalHabit(mode, habit=null){
+  const isEdit = mode==="edit" && habit;
+  const title = isEdit ? "Edit Habit" : "Add Habit";
+
+  const bodyHtml = `
+    <div class="field">
+      <label>Habit</label>
+      <input id="habitTitle" placeholder="e.g., Gym" value="${escapeAttr(habit?.title||"")}" />
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Frequency (times/week)</label>
+      <input id="habitFreq" type="number" min="0" step="1" value="${escapeAttr(String(habit?.freqPerWeek ?? 0))}" />
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Days (optional)</label>
+      <div id="habitDays">${renderDowChecks(habit?.days||[])}</div>
+      <div class="muted" style="margin-top:6px;">If none selected, it applies every day.</div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Stream</label>
+      <select id="habitStream">
+        ${["Anytime","Morning","Afternoon","Evening"].map(s=>`<option value="${s}" ${habit?.stream===s?"selected":""}>${s}</option>`).join("")}
+      </select>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1">
+        <label>Time start (optional)</label>
+        <input id="habitStart" type="time" value="${escapeAttr(habit?.timeStart||"")}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Time finish (optional)</label>
+        <input id="habitFinish" type="time" value="${escapeAttr(habit?.timeFinish||"")}" />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Reminder time (optional)</label>
+      <input id="habitReminder" type="time" value="${escapeAttr(habit?.reminderTime||"")}" />
+      <div class="muted" style="margin-top:6px;">Reminder is informational for now (no push notifications).</div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Notes</label>
+      <textarea id="habitNote" placeholder="Optional">${escapeHtml(habit?.note||"")}</textarea>
+    </div>
+
+    <div class="field" style="margin-top:10px; display:flex; align-items:flex-end;">
+      <label style="display:flex; align-items:center; gap:10px; width:100%; margin:0;">
+        <input id="habitActive" type="checkbox" ${habit?.active===false ? "" : "checked"} />
+        <span>Active</span>
+      </label>
+    </div>
+  `;
+
+  showModal({
+    title,
+    bodyHtml,
+    actions: [
+      { label:"Cancel", variant:"ghost", onClick: closeModal },
+      ...(isEdit ? [{ label:"Delete", variant:"danger", onClick: async ()=>{
+        await deleteHabit(habit.id);
+        closeModal();
+        await refreshAll();
+      }}] : []),
+      { label:"Save", variant:"primary", onClick: async ()=>{
+        const hTitle = document.getElementById("habitTitle").value.trim();
+        const freq = Number(document.getElementById("habitFreq").value || 0);
+        const days = readDowChecks(document.getElementById("habitDays"));
+        const stream = document.getElementById("habitStream").value;
+        const ts = document.getElementById("habitStart").value;
+        const tf = document.getElementById("habitFinish").value;
+        const reminder = document.getElementById("habitReminder").value;
+        const note = document.getElementById("habitNote").value.trim();
+        const active = document.getElementById("habitActive").checked;
+
+        if(!hTitle){ setModalError("Habit title is required."); return; }
+        if(tf && !ts){ setModalError("Start is mandatory if Finish is provided."); return; }
+        if(ts && tf){
+          const a=hmToMin(ts), b=hmToMin(tf);
+          if(a===null||b===null){ setModalError("Invalid time."); return; }
+          if(b<=a){ setModalError("Finish must be after Start."); return; }
+        }
+
+        const now = new Date().toISOString();
+        const base = isEdit ? habit : { id: uid(), mode: state.currentMode, createdAt: now };
+        const next = {
+          ...base,
+          title: hTitle,
+          freqPerWeek: Number.isFinite(freq) ? freq : 0,
+          days,
+          stream,
+          timeStart: ts || "",
+          timeFinish: tf || "",
+          reminderTime: reminder || "",
+          note,
+          active,
+          updatedAt: now,
+        };
+        await upsertHabit(next);
+        // ensure timed habits appear as tasks for the current date
+        await ensureHabitTimedTasks(state.currentDate, state.currentMode);
+        closeModal();
+        await refreshAll();
+      }}
+    ]
+  });
+}
+
+// ---------- Habit log modal ----------
+async function openModalHabitLog(habit){
+  const log = await getHabitLog(state.currentDate, state.currentMode, habit.id);
+  const curr = log || { key: habitLogKey(state.currentDate,state.currentMode,habit.id), date: state.currentDate, mode: state.currentMode, habitId: habit.id, done:false, actualStart:"", actualFinish:"", note:"" };
+
+  const bodyHtml = `
+    <div class="field">
+      <label>Habit</label>
+      <input value="${escapeAttr(habit.title)}" disabled />
+    </div>
+
+    <div class="field" style="margin-top:10px; display:flex; align-items:flex-end;">
+      <label style="display:flex; align-items:center; gap:10px; width:100%; margin:0;">
+        <input id="hlogDone" type="checkbox" ${curr.done?"checked":""} />
+        <span>Done today</span>
+      </label>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1">
+        <label>Actual start</label>
+        <input id="hlogStart" type="time" value="${escapeAttr(curr.actualStart||"")}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Actual finish</label>
+        <input id="hlogFinish" type="time" value="${escapeAttr(curr.actualFinish||"")}" />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Notes</label>
+      <textarea id="hlogNote" placeholder="Optional">${escapeHtml(curr.note||"")}</textarea>
+    </div>
+  `;
+
+  showModal({
+    title: "Today’s Habit Record",
+    bodyHtml,
+    actions: [
+      { label:"Close", variant:"ghost", onClick: closeModal },
+      { label:"Save", variant:"primary", onClick: async ()=>{
+        const done = document.getElementById("hlogDone").checked;
+        const as = document.getElementById("hlogStart").value;
+        const af = document.getElementById("hlogFinish").value;
+        const note = document.getElementById("hlogNote").value.trim();
+
+        if(af && !as){ setModalError("Start is mandatory if Finish is provided."); return; }
+        if(as && af){
+          const a=hmToMin(as), b=hmToMin(af);
+          if(a===null||b===null){ setModalError("Invalid time."); return; }
+          if(b<=a){ setModalError("Finish must be after Start."); return; }
+        }
+
+        const now = new Date().toISOString();
+        const next = { ...curr, done, actualStart: as||"", actualFinish: af||"", note, updatedAt: now };
+        await upsertHabitLog(next);
+
+        // sync linked timed task (if any)
+        if(habit.timeStart){
+          const tasks = await listTasks(state.currentDate, state.currentMode);
+          const linked = tasks.find(t=>t.sourceHabitId===habit.id);
+          if(linked){
+            await upsertTask({
+              ...linked,
+              done,
+              actualStart: next.actualStart || linked.actualStart,
+              actualFinish: next.actualFinish || linked.actualFinish,
+              updatedAt: now,
+            });
+          }
+        }
+
+        closeModal();
+        await refreshAll();
+      }}
+    ]
+  });
+}
+
+// ---------- Big task modal ----------
+function openModalBig(mode, item=null){
+  const isEdit = mode==="edit" && item;
+  const title = isEdit ? "Edit Big Task" : "Add Big Task";
+
+  const bodyHtml = `
+    <div class="field">
+      <label>Title</label>
+      <input id="bigTitle" placeholder="e.g., Finish pipeline design" value="${escapeAttr(item?.title||"")}" />
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Due date (optional)</label>
+      <input id="bigDue" type="date" value="${escapeAttr(item?.dueDate||"")}" />
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1">
+        <label>Priority</label>
+        <select id="bigPriority">
+          ${["P1","P2","P3","P4"].map(p=>`<option value="${p}" ${(item?.priority||"P2")===p?"selected":""}>${p}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="flex:1; display:flex; align-items:flex-end;">
+        <label style="display:flex; align-items:center; gap:10px; width:100%; margin:0;">
+          <input id="bigPinned" type="checkbox" ${item?.pinned?"checked":""} />
+          <span>Pinned</span>
+        </label>
+      </div>
+    </div>
+
+    ${isEdit ? `
+      <div class="field" style="margin-top:10px; display:flex; align-items:flex-end;">
+        <label style="display:flex; align-items:center; gap:10px; width:100%; margin:0;">
+          <input id="bigDone" type="checkbox" ${item?.done?"checked":""} />
+          <span>Done</span>
+        </label>
+      </div>
+    ` : ""}
+  `;
+
+  showModal({
+    title,
+    bodyHtml,
+    actions: [
+      { label:"Cancel", variant:"ghost", onClick: closeModal },
+      ...(isEdit ? [{ label:"Delete", variant:"danger", onClick: async ()=>{
+        await deleteBig(item.id);
+        closeModal();
+        await refreshAll();
+      }}] : []),
+      { label:"Save", variant:"primary", onClick: async ()=>{
+        const t = document.getElementById("bigTitle").value.trim();
+        if(!t){ setModalError("Title is required."); return; }
+
+        const now = new Date().toISOString();
+        const base = isEdit ? item : { id: uid(), mode: state.currentMode, done:false, createdAt: now };
+        const next = {
+          ...base,
+          title: t,
+          dueDate: document.getElementById("bigDue").value || "",
+          priority: document.getElementById("bigPriority").value,
+          pinned: document.getElementById("bigPinned").checked,
+          updatedAt: now,
+        };
+        if(isEdit) next.done = document.getElementById("bigDone").checked;
+        await upsertBig(next);
+        closeModal();
+        await refreshAll();
+      }}
+    ]
+  });
+}
+
+// ---------- Recurring rules ----------
+function openModalRecurringManager(){
+  (async ()=>{
+    const rules = await listRecurring(state.currentMode);
+    const bodyHtml = `
+      <div class="muted" style="margin-bottom:10px;">Recurring rules auto-create tasks for the selected day.</div>
+      <div id="recList">
+        ${rules.length ? rules.map(r=>`
+          <div class="item" style="margin-bottom:10px;">
+            <div class="mid">
+              <p class="taskText">${escapeHtml(r.title)}</p>
+              <div class="meta">
+                ${(r.plannedStart||r.plannedFinish) ? `<span class="pill">${escapeHtml(r.plannedStart||"")} ${r.plannedFinish?("→ "+escapeHtml(r.plannedFinish)):""}</span>`:""}
+                ${Array.isArray(r.days)&&r.days.length ? `<span class="pill">Days ${r.days.map(d=>["M","T","W","T","F","S","S"][d]).join("")}</span>`:"<span class='pill'>Daily</span>"}
+                <span class="pill">${escapeHtml(r.priority||"P2")}</span>
+                ${r.active ? "" : "<span class='pill'>Inactive</span>"}
+              </div>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="menuBtn" type="button" data-edit="${escapeAttr(r.id)}">Edit</button>
+              <button class="menuBtn" type="button" data-del="${escapeAttr(r.id)}">Delete</button>
+            </div>
+          </div>
+        `).join("") : `<div class="empty">No recurring rules yet.</div>`}
+      </div>
+    `;
+
+    showModal({
+      title: "Recurring Rules",
+      bodyHtml,
+      actions: [
+        { label:"Close", variant:"ghost", onClick: closeModal },
+        { label:"Add Rule", variant:"primary", onClick: ()=> openModalRecurringEdit("create", null) },
+      ]
+    });
+
+    const recList = document.getElementById("recList");
+    if(recList){
+      recList.addEventListener("click", async (e)=>{
+        const ed = e.target.closest("[data-edit]")?.dataset?.edit;
+        const dl = e.target.closest("[data-del]")?.dataset?.del;
+        if(ed){
+          const r = rules.find(x=>x.id===ed);
+          if(r) openModalRecurringEdit("edit", r);
+        }else if(dl){
+          if(confirm("Delete this rule?")){
+            await deleteRecurring(dl);
+            closeModal();
+            await refreshAll();
+            openModalRecurringManager();
+          }
+        }
+      });
+    }
+  })();
+}
+
+function openModalRecurringEdit(mode, rule=null){
+  const isEdit = mode==="edit" && rule;
+  const title = isEdit ? "Edit Recurring Rule" : "Add Recurring Rule";
+
+  const bodyHtml = `
+    <div class="field">
+      <label>Title</label>
+      <input id="recTitle" placeholder="e.g., Office" value="${escapeAttr(rule?.title||"")}" />
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1">
+        <label>Start</label>
+        <input id="recStart" type="time" value="${escapeAttr(rule?.plannedStart||"")}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Finish</label>
+        <input id="recFinish" type="time" value="${escapeAttr(rule?.plannedFinish||"")}" />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label>Days</label>
+      <div id="recDays">${renderDowChecks(rule?.days||[])}</div>
+      <div class="muted" style="margin-top:6px;">If none selected, it applies every day.</div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1">
+        <label>Priority</label>
+        <select id="recPriority">
+          ${["P1","P2","P3","P4"].map(p=>`<option value="${p}" ${(rule?.priority||"P2")===p?"selected":""}>${p}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="flex:1; display:flex; align-items:flex-end;">
+        <label style="display:flex; align-items:center; gap:10px; width:100%; margin:0;">
+          <input id="recActive" type="checkbox" ${rule?.active===false ? "" : "checked"} />
+          <span>Active</span>
+        </label>
+      </div>
+    </div>
+  `;
+
+  showModal({
+    title,
+    bodyHtml,
+    actions: [
+      { label:"Cancel", variant:"ghost", onClick: ()=> openModalRecurringManager() },
+      ...(isEdit ? [{ label:"Delete", variant:"danger", onClick: async ()=>{
+        if(!confirm("Delete this rule?")) return;
+        await deleteRecurring(rule.id);
+        closeModal();
+        await refreshAll();
+        openModalRecurringManager();
+      }}] : []),
+      { label:"Save", variant:"primary", onClick: async ()=>{
+        const t = document.getElementById("recTitle").value.trim();
+        const ps = document.getElementById("recStart").value;
+        const pf = document.getElementById("recFinish").value;
+        const days = readDowChecks(document.getElementById("recDays"));
+        const pr = document.getElementById("recPriority").value;
+        const active = document.getElementById("recActive").checked;
+
+        if(!t){ setModalError("Title is required."); return; }
+        if(pf && !ps){ setModalError("Start is mandatory if Finish is provided."); return; }
+        if(ps && pf){
+          const a=hmToMin(ps), b=hmToMin(pf);
+          if(a===null||b===null){ setModalError("Invalid time."); return; }
+          if(b<=a){ setModalError("Finish must be after Start."); return; }
+        }
+
+        const now = new Date().toISOString();
+        const base = isEdit ? rule : { id: uid(), mode: state.currentMode, createdAt: now };
+        const next = {
+          ...base,
+          title: t,
+          plannedStart: ps || "",
+          plannedFinish: pf || "",
+          days,
+          priority: pr,
+          active,
+          updatedAt: now,
+        };
+
+        await upsertRecurring(next);
+        await ensureRecurringTasks(state.currentDate, state.currentMode);
+        closeModal();
+        await refreshAll();
+        openModalRecurringManager();
+      }}
+    ]
+  });
+}
+
 function minutesFromHHMM(hhmm){
   if(!hhmm) return null;
   const [h,m]=hhmm.split(":").map(x=>parseInt(x,10));
@@ -682,12 +1300,6 @@ async function refreshBig(){
 // ---------- NOTES ----------
 let _notesDebounce = null;
 
-// ---------- FAB ----------
-function onFab(){
-  if(state.currentTab==="plan") openModalTask("create");
-  else if(state.currentTab==="habits") openModalHabit("create");
-  else if(state.currentTab==="big") openModalBig("create");
-}
 
 // ---------- Init ----------
 (async function init(){
@@ -750,6 +1362,12 @@ function onFab(){
 
   document.getElementById("closeModal").addEventListener("click", closeModal);
   document.getElementById("modalBg").addEventListener("click", (e)=>{ if(e.target.id==="modalBg") closeModal(); });
+
+
+  // Service worker (offline cache)
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.register("./sw.js").catch(()=>{});
+  }
 
   document.getElementById("fab").addEventListener("click", onFab);
 
